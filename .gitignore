@@ -1,0 +1,9 @@
+# Binaries
+/daily-kopi
+
+# Secrets
+.env
+
+# Claude
+CLAUDE.md
+.claude/
