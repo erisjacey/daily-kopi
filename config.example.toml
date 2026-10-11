@@ -1,0 +1,35 @@
+# ========================================================================
+# Global
+# ========================================================================
+max_items_per_topic = 5
+
+# ========================================================================
+# Topics and Nested Feeds
+# ========================================================================
+[[topics]]
+name = "technology"
+
+[[topics.feeds]]
+name = "Tech Feed"
+url = "://tech-feed-url"
+
+[[topics]]
+name = "politics"
+
+[[topics.feeds]]
+name = "Politics Feed"
+url = "://politics-feed-url"
+
+[[topics]]
+name = "finance"
+
+[[topics.feeds]]
+name = "Finance Feed"
+url = "://finance-feed-url"
+
+# ========================================================================
+# Recipients
+# ========================================================================
+[[recipients]]
+chat_id = 1234567890
+topics = ["technology", "politics", "finance"]
