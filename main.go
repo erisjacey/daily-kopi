@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -20,22 +19,22 @@ import (
 )
 
 func main() {
-	// Load env & env variables
 	godotenv.Load()
 	botToken := os.Getenv("TELEGRAM_BOT_TOKEN")
 	if botToken == "" {
 		log.Fatal("telegram bot token not set")
 	}
 
-	// Load config
 	config, err := loadConfig("config.toml")
 	if err != nil {
 		log.Fatalf("loading config: %v", err)
 	}
 
-	// Loop over recipients
+	articles := fetchArticles(config.Topics)
+
 	for _, recipient := range config.Recipients {
-		if err := sendDigest(botToken, recipient, config.Topics, config.MaxItemsPerTopic); err != nil {
+		digest := buildDigest(articles, recipient, config.MaxItemsPerTopic)
+		if err := sendMessage(botToken, strconv.Itoa(recipient.ChatID), digest); err != nil {
 			slog.Error("send digest failed", "recipient", recipient.ChatID, "err", err)
 			continue
 		}
@@ -43,35 +42,42 @@ func main() {
 	}
 }
 
-func sendDigest(botToken string, recipient Recipient, topics []Topic, maxItemsPerTopic int) error {
-	var filteredTopics []Topic
-
-	// Find matching topics
-	for _, topic := range topics {
-		if slices.Contains(recipient.Topics, topic.Name) {
-			filteredTopics = append(filteredTopics, topic)
-		}
-	}
-
+// Fetch articles, skipping feeds that fail. If all feeds for a topic fail,
+// it has no corresponding entry in the map.
+func fetchArticles(topics []Topic) map[string][]*gofeed.Item {
+	articles := make(map[string][]*gofeed.Item)
 	fp := gofeed.NewParser()
-	var sb strings.Builder
-	for _, topic := range filteredTopics {
-		var topicItems []*gofeed.Item
 
+	for _, topic := range topics {
 		for _, feed := range topic.Feeds {
 			parsedFeed, err := fp.ParseURL(feed.URL)
 			if err != nil {
 				slog.Warn("feed parse failed", "url", feed.URL, "err", err)
 				continue
 			}
-			topicItems = append(topicItems, parsedFeed.Items...)
+			articles[topic.Name] = append(articles[topic.Name], parsedFeed.Items...)
 		}
-
-		capped := topicItems[:min(maxItemsPerTopic, len(topicItems))]
-		fmt.Fprintln(&sb, formatItems(capped, topic.Name))
 	}
 
-	return sendMessage(botToken, strconv.Itoa(recipient.ChatID), sb.String())
+	return articles
+}
+
+func buildDigest(articles map[string][]*gofeed.Item, recipient Recipient, maxItemsPerTopic int) string {
+	var sb strings.Builder
+
+	// Iterate the recipient's list, not the map, to keep their topic order
+	for _, topic := range recipient.Topics {
+		items := articles[topic]
+		if len(items) == 0 {
+			slog.Warn("no items for topic", "topic", topic)
+			continue
+		}
+
+		capped := items[:min(maxItemsPerTopic, len(items))]
+		fmt.Fprintln(&sb, formatItems(capped, topic))
+	}
+
+	return sb.String()
 }
 
 func formatItems(items []*gofeed.Item, topicName string) string {
