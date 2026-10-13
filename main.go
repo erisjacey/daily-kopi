@@ -77,17 +77,30 @@ func filterRecentItems(items []*gofeed.Item) []*gofeed.Item {
 
 func buildDigest(articles map[string][]*gofeed.Item, recipient Recipient, maxItemsPerTopic int) string {
 	var sb strings.Builder
+	seen := make(map[string]struct{})
 
 	// Iterate the recipient's list, not the map, to keep their topic order
 	for _, topic := range recipient.Topics {
 		items := articles[topic]
-		if len(items) == 0 {
+		var uniqueItems []*gofeed.Item
+
+		for _, item := range items {
+			if len(uniqueItems) >= maxItemsPerTopic {
+				break
+			}
+			if _, exists := seen[item.Link]; exists {
+				continue
+			}
+			uniqueItems = append(uniqueItems, item)
+			seen[item.Link] = struct{}{}
+		}
+
+		if len(uniqueItems) == 0 {
 			slog.Warn("no items for topic", "topic", topic)
 			continue
 		}
 
-		capped := items[:min(maxItemsPerTopic, len(items))]
-		fmt.Fprintln(&sb, formatItems(capped, topic))
+		fmt.Fprintln(&sb, formatItems(uniqueItems, topic))
 	}
 
 	return sb.String()
