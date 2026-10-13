@@ -13,6 +13,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/mmcdole/gofeed"
@@ -55,11 +56,23 @@ func fetchArticles(topics []Topic) map[string][]*gofeed.Item {
 				slog.Warn("feed parse failed", "url", feed.URL, "err", err)
 				continue
 			}
-			articles[topic.Name] = append(articles[topic.Name], parsedFeed.Items...)
+
+			articles[topic.Name] = append(articles[topic.Name], filterRecentItems(parsedFeed.Items)...)
 		}
 	}
 
 	return articles
+}
+
+func filterRecentItems(items []*gofeed.Item) []*gofeed.Item {
+	var filtered []*gofeed.Item
+	for _, item := range items {
+		// nil PublishedParsed is considered "probably recent"
+		if item.PublishedParsed == nil || time.Since(*item.PublishedParsed).Abs() < 24*time.Hour {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
 }
 
 func buildDigest(articles map[string][]*gofeed.Item, recipient Recipient, maxItemsPerTopic int) string {
