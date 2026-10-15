@@ -8,6 +8,7 @@ import (
 )
 
 type Config struct {
+	StateFile        string      `toml:"state_file"`
 	MaxItemsPerTopic int         `toml:"max_items_per_topic"`
 	Topics           []Topic     `toml:"topics"`
 	Recipients       []Recipient `toml:"recipients"`

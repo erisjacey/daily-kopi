@@ -33,17 +33,46 @@ func main() {
 
 	articles := fetchArticles(config.Topics)
 
+	state, err := loadState(config.StateFile)
+	if err != nil {
+		log.Fatalf("loading state: %v", err)
+	}
+
 	for _, recipient := range config.Recipients {
-		digest := buildDigest(articles, recipient, config.MaxItemsPerTopic)
+		sent := state[recipient.ChatID]
+		if sent == nil {
+			sent = make(map[string]time.Time)
+		}
+
+		digest, included := buildDigest(articles, recipient, config.MaxItemsPerTopic, sent)
+		if digest == "" {
+			slog.Info("empty message, skip send", "recipient", recipient.ChatID)
+			continue
+		}
+
 		if err := sendMessage(botToken, strconv.Itoa(recipient.ChatID), digest); err != nil {
 			slog.Error("send digest failed", "recipient", recipient.ChatID, "err", err)
 			continue
 		}
+
 		slog.Info("send digest succeeded", "recipient", recipient.ChatID)
+
+		// Only mark after successful send, so failed sends are retried next run
+		now := time.Now()
+		for link := range included {
+			sent[link] = now
+		}
+
+		state[recipient.ChatID] = sent
+	}
+
+	err = saveState(config.StateFile, state)
+	if err != nil {
+		log.Fatalf("saving state: %v", err)
 	}
 }
 
-// Fetch articles, skipping feeds that fail. If all feeds for a topic fail,
+// fetchArticles returns a list of articles, skipping feeds that fail. If all feeds for a topic fail,
 // it has no corresponding entry in the map.
 func fetchArticles(topics []Topic) map[string][]*gofeed.Item {
 	articles := make(map[string][]*gofeed.Item)
@@ -75,9 +104,11 @@ func filterRecentItems(items []*gofeed.Item) []*gofeed.Item {
 	return filtered
 }
 
-func buildDigest(articles map[string][]*gofeed.Item, recipient Recipient, maxItemsPerTopic int) string {
+// buildDigest returns the digest text and the URLs it included.
+func buildDigest(articles map[string][]*gofeed.Item, recipient Recipient, maxItemsPerTopic int,
+	sent map[string]time.Time) (string, map[string]struct{}) {
 	var sb strings.Builder
-	seen := make(map[string]struct{})
+	included := make(map[string]struct{})
 
 	// Iterate the recipient's list, not the map, to keep their topic order
 	for _, topic := range recipient.Topics {
@@ -88,11 +119,19 @@ func buildDigest(articles map[string][]*gofeed.Item, recipient Recipient, maxIte
 			if len(uniqueItems) >= maxItemsPerTopic {
 				break
 			}
-			if _, exists := seen[item.Link]; exists {
+
+			if _, exists := sent[item.Link]; exists {
 				continue
 			}
+
+			if _, exists := included[item.Link]; exists {
+				continue
+			}
+
 			uniqueItems = append(uniqueItems, item)
-			seen[item.Link] = struct{}{}
+
+			// Only mark once item makes the cut, so items dropped by cap can still appear under a later topic
+			included[item.Link] = struct{}{}
 		}
 
 		if len(uniqueItems) == 0 {
@@ -103,7 +142,7 @@ func buildDigest(articles map[string][]*gofeed.Item, recipient Recipient, maxIte
 		fmt.Fprintln(&sb, formatItems(uniqueItems, topic))
 	}
 
-	return sb.String()
+	return sb.String(), included
 }
 
 func formatItems(items []*gofeed.Item, topicName string) string {

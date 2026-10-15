@@ -5,6 +5,9 @@
 .env
 /config.toml
 
+# State
+/state.json
+
 # Claude
 CLAUDE.md
 .claude/
