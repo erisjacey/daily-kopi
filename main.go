@@ -13,6 +13,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/mmcdole/gofeed"
@@ -32,18 +33,48 @@ func main() {
 
 	articles := fetchArticles(config.Topics)
 
+	state, err := loadState(config.StateFile)
+	if err != nil {
+		log.Fatalf("loading state: %v", err)
+	}
+
 	for _, recipient := range config.Recipients {
-		digest := buildDigest(articles, recipient, config.MaxItemsPerTopic)
+		sent := state[recipient.ChatID]
+		if sent == nil {
+			sent = make(map[string]time.Time)
+		}
+
+		digest, included := buildDigest(articles, recipient, config.MaxItemsPerTopic, sent)
+		if digest == "" {
+			slog.Info("empty message, skip send", "recipient", recipient.ChatID)
+			continue
+		}
+
 		if err := sendMessage(botToken, strconv.Itoa(recipient.ChatID), digest); err != nil {
 			slog.Error("send digest failed", "recipient", recipient.ChatID, "err", err)
 			continue
 		}
+
 		slog.Info("send digest succeeded", "recipient", recipient.ChatID)
+
+		// Only mark after successful send, so failed sends are retried next run
+		now := time.Now()
+		for link := range included {
+			sent[link] = now
+		}
+
+		state[recipient.ChatID] = sent
+	}
+
+	pruneState(state)
+	err = saveState(config.StateFile, state)
+	if err != nil {
+		log.Fatalf("saving state: %v", err)
 	}
 }
 
-// Fetch articles, skipping feeds that fail. If all feeds for a topic fail,
-// it has no corresponding entry in the map.
+// fetchArticles returns recent items keyed by topic, skipping feeds that fail.
+// If all feeds for a topic fail, it has no corresponding entry in the map.
 func fetchArticles(topics []Topic) map[string][]*gofeed.Item {
 	articles := make(map[string][]*gofeed.Item)
 	fp := gofeed.NewParser()
@@ -55,29 +86,64 @@ func fetchArticles(topics []Topic) map[string][]*gofeed.Item {
 				slog.Warn("feed parse failed", "url", feed.URL, "err", err)
 				continue
 			}
-			articles[topic.Name] = append(articles[topic.Name], parsedFeed.Items...)
+
+			articles[topic.Name] = append(articles[topic.Name], filterRecentItems(parsedFeed.Items)...)
 		}
 	}
 
 	return articles
 }
 
-func buildDigest(articles map[string][]*gofeed.Item, recipient Recipient, maxItemsPerTopic int) string {
+func filterRecentItems(items []*gofeed.Item) []*gofeed.Item {
+	var filtered []*gofeed.Item
+	for _, item := range items {
+		// nil PublishedParsed is considered "probably recent"
+		if item.PublishedParsed == nil || time.Since(*item.PublishedParsed).Abs() < 24*time.Hour {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
+// buildDigest returns the digest text and the URLs it included.
+func buildDigest(articles map[string][]*gofeed.Item, recipient Recipient, maxItemsPerTopic int,
+	sent map[string]time.Time) (string, map[string]struct{}) {
 	var sb strings.Builder
+	included := make(map[string]struct{})
 
 	// Iterate the recipient's list, not the map, to keep their topic order
 	for _, topic := range recipient.Topics {
 		items := articles[topic]
-		if len(items) == 0 {
+		var uniqueItems []*gofeed.Item
+
+		for _, item := range items {
+			if len(uniqueItems) >= maxItemsPerTopic {
+				break
+			}
+
+			if _, exists := sent[item.Link]; exists {
+				continue
+			}
+
+			if _, exists := included[item.Link]; exists {
+				continue
+			}
+
+			uniqueItems = append(uniqueItems, item)
+
+			// Only mark once item makes the cut, so items dropped by cap can still appear under a later topic
+			included[item.Link] = struct{}{}
+		}
+
+		if len(uniqueItems) == 0 {
 			slog.Warn("no items for topic", "topic", topic)
 			continue
 		}
 
-		capped := items[:min(maxItemsPerTopic, len(items))]
-		fmt.Fprintln(&sb, formatItems(capped, topic))
+		fmt.Fprintln(&sb, formatItems(uniqueItems, topic))
 	}
 
-	return sb.String()
+	return sb.String(), included
 }
 
 func formatItems(items []*gofeed.Item, topicName string) string {
