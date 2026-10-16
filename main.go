@@ -73,8 +73,8 @@ func main() {
 	}
 }
 
-// fetchArticles returns a list of articles, skipping feeds that fail. If all feeds for a topic fail,
-// it has no corresponding entry in the map.
+// fetchArticles returns recent items keyed by topic, skipping feeds that fail.
+// If all feeds for a topic fail, it has no corresponding entry in the map.
 func fetchArticles(topics []Topic) map[string][]*gofeed.Item {
 	articles := make(map[string][]*gofeed.Item)
 	fp := gofeed.NewParser()
