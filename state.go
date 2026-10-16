@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"time"
 )
@@ -43,4 +44,23 @@ func loadState(path string) (State, error) {
 	}
 
 	return state, nil
+}
+
+const retention = 30 * 24 * time.Hour
+
+func pruneState(state State) {
+	cutoff := time.Now().Add(-retention)
+
+	for chatID, sent := range state {
+		for link, sentAt := range sent {
+			if sentAt.Before(cutoff) {
+				delete(sent, link)
+			}
+		}
+
+		if len(sent) == 0 {
+			delete(state, chatID)
+			slog.Info("deleted state for recipient", "recipient", chatID)
+		}
+	}
 }

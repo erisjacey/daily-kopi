@@ -66,6 +66,7 @@ func main() {
 		state[recipient.ChatID] = sent
 	}
 
+	pruneState(state)
 	err = saveState(config.StateFile, state)
 	if err != nil {
 		log.Fatalf("saving state: %v", err)
