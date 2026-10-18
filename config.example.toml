@@ -9,6 +9,7 @@ max_items_per_topic = 5
 # ========================================================================
 [[topics]]
 name = "technology"
+display_name = "💻 Technology"
 
 # Items are taken round-robin from each feed, up to max_items_per_topic.
 # List the most important feed first.
@@ -22,6 +23,7 @@ url = "https://example.com/tech2.xml"
 
 [[topics]]
 name = "politics"
+display_name = "🏛️ Politics"
 
 [[topics.feeds]]
 name = "Politics Feed"
@@ -29,6 +31,7 @@ url = "https://example.com/politics.xml"
 
 [[topics]]
 name = "finance"
+display_name = "💰 Finance"
 
 [[topics.feeds]]
 name = "Finance Feed"

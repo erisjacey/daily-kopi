@@ -37,6 +37,7 @@ func main() {
 		log.Fatalf("loading config: %v", err)
 	}
 
+	labels := topicLabels(config.Topics)
 	articles := fetchArticles(config.Topics)
 
 	state, err := loadState(config.StateFile)
@@ -50,7 +51,7 @@ func main() {
 			sent = make(map[string]time.Time)
 		}
 
-		digest, included := buildDigest(articles, recipient, config.MaxItemsPerTopic, sent)
+		digest, included := buildDigest(articles, recipient, config.MaxItemsPerTopic, sent, labels)
 		if digest == "" {
 			slog.Info("empty message, skip send", "recipient", recipient.ChatID)
 			continue
@@ -77,6 +78,14 @@ func main() {
 	if err != nil {
 		log.Fatalf("saving state: %v", err)
 	}
+}
+
+func topicLabels(topics []Topic) map[string]string {
+	labels := make(map[string]string)
+	for _, topic := range topics {
+		labels[topic.Name] = topic.Label()
+	}
+	return labels
 }
 
 // fetchArticles returns recent items keyed by topic, skipping feeds that fail.
@@ -145,7 +154,7 @@ func interleave(feeds [][]Article) []Article {
 
 // buildDigest returns the digest text and the URLs it included.
 func buildDigest(articles map[string][]Article, recipient Recipient, maxItemsPerTopic int,
-	sent map[string]time.Time) (string, map[string]struct{}) {
+	sent map[string]time.Time, labels map[string]string) (string, map[string]struct{}) {
 	var sb strings.Builder
 	included := make(map[string]struct{})
 
@@ -178,16 +187,16 @@ func buildDigest(articles map[string][]Article, recipient Recipient, maxItemsPer
 			continue
 		}
 
-		fmt.Fprintln(&sb, formatItems(uniqueItems, topic))
+		fmt.Fprintln(&sb, formatItems(uniqueItems, labels[topic]))
 	}
 
 	return sb.String(), included
 }
 
-func formatItems(items []Article, topicName string) string {
+func formatItems(items []Article, topicLabel string) string {
 	var sb strings.Builder
 
-	fmt.Fprintf(&sb, "<b>%s</b>\n", html.EscapeString(topicName))
+	fmt.Fprintf(&sb, "<b>%s</b>\n", html.EscapeString(topicLabel))
 	for _, item := range items {
 		fmt.Fprintf(&sb, "• <a href=\"%s\">%s</a> <i>— %s</i>\n", html.EscapeString(item.Link),
 			html.EscapeString(item.Title), html.EscapeString(item.Source))
