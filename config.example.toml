@@ -10,23 +10,29 @@ max_items_per_topic = 5
 [[topics]]
 name = "technology"
 
+# Items are taken round-robin from each feed, up to max_items_per_topic.
+# List the most important feed first.
 [[topics.feeds]]
 name = "Tech Feed"
-url = "://tech-feed-url"
+url = "https://example.com/tech.xml"
+
+[[topics.feeds]]
+name = "Tech Feed 2"
+url = "https://example.com/tech2.xml"
 
 [[topics]]
 name = "politics"
 
 [[topics.feeds]]
 name = "Politics Feed"
-url = "://politics-feed-url"
+url = "https://example.com/politics.xml"
 
 [[topics]]
 name = "finance"
 
 [[topics.feeds]]
 name = "Finance Feed"
-url = "://finance-feed-url"
+url = "https://example.com/finance.xml"
 
 # ========================================================================
 # Recipients

@@ -74,12 +74,14 @@ func main() {
 }
 
 // fetchArticles returns recent items keyed by topic, skipping feeds that fail.
-// If all feeds for a topic fail, it has no corresponding entry in the map.
+// Items are interleaved round-robin across each topic's feeds.
 func fetchArticles(topics []Topic) map[string][]*gofeed.Item {
 	articles := make(map[string][]*gofeed.Item)
 	fp := gofeed.NewParser()
 
 	for _, topic := range topics {
+		var feedItems [][]*gofeed.Item
+
 		for _, feed := range topic.Feeds {
 			parsedFeed, err := fp.ParseURL(feed.URL)
 			if err != nil {
@@ -87,8 +89,10 @@ func fetchArticles(topics []Topic) map[string][]*gofeed.Item {
 				continue
 			}
 
-			articles[topic.Name] = append(articles[topic.Name], filterRecentItems(parsedFeed.Items)...)
+			feedItems = append(feedItems, filterRecentItems(parsedFeed.Items))
 		}
+
+		articles[topic.Name] = interleave(feedItems)
 	}
 
 	return articles
@@ -103,6 +107,25 @@ func filterRecentItems(items []*gofeed.Item) []*gofeed.Item {
 		}
 	}
 	return filtered
+}
+
+func interleave(feeds [][]*gofeed.Item) []*gofeed.Item {
+	var items []*gofeed.Item
+
+	longestLength := 0
+	for _, feed := range feeds {
+		longestLength = max(longestLength, len(feed))
+	}
+
+	for i := range longestLength {
+		for _, feed := range feeds {
+			if i < len(feed) {
+				items = append(items, feed[i])
+			}
+		}
+	}
+
+	return items
 }
 
 // buildDigest returns the digest text and the URLs it included.
