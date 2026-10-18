@@ -15,8 +15,17 @@ type Config struct {
 }
 
 type Topic struct {
-	Name  string `toml:"name"`
-	Feeds []Feed `toml:"feeds"`
+	Name        string `toml:"name"`
+	DisplayName string `toml:"display_name"`
+	Feeds       []Feed `toml:"feeds"`
+}
+
+// Label returns DisplayName, or Name if it's unset.
+func (t Topic) Label() string {
+	if t.DisplayName == "" {
+		return t.Name
+	}
+	return t.DisplayName
 }
 
 type Feed struct {

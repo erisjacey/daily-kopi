@@ -19,6 +19,12 @@ import (
 	"github.com/mmcdole/gofeed"
 )
 
+type Article struct {
+	Title  string
+	Link   string
+	Source string
+}
+
 func main() {
 	godotenv.Load()
 	botToken := os.Getenv("TELEGRAM_BOT_TOKEN")
@@ -31,6 +37,7 @@ func main() {
 		log.Fatalf("loading config: %v", err)
 	}
 
+	labels := topicLabels(config.Topics)
 	articles := fetchArticles(config.Topics)
 
 	state, err := loadState(config.StateFile)
@@ -38,13 +45,14 @@ func main() {
 		log.Fatalf("loading state: %v", err)
 	}
 
+	now := time.Now()
 	for _, recipient := range config.Recipients {
 		sent := state[recipient.ChatID]
 		if sent == nil {
 			sent = make(map[string]time.Time)
 		}
 
-		digest, included := buildDigest(articles, recipient, config.MaxItemsPerTopic, sent)
+		digest, included := buildDigest(articles, recipient, config.MaxItemsPerTopic, sent, labels, now)
 		if digest == "" {
 			slog.Info("empty message, skip send", "recipient", recipient.ChatID)
 			continue
@@ -58,7 +66,6 @@ func main() {
 		slog.Info("send digest succeeded", "recipient", recipient.ChatID)
 
 		// Only mark after successful send, so failed sends are retried next run
-		now := time.Now()
 		for link := range included {
 			sent[link] = now
 		}
@@ -73,14 +80,22 @@ func main() {
 	}
 }
 
+func topicLabels(topics []Topic) map[string]string {
+	labels := make(map[string]string)
+	for _, topic := range topics {
+		labels[topic.Name] = topic.Label()
+	}
+	return labels
+}
+
 // fetchArticles returns recent items keyed by topic, skipping feeds that fail.
 // Items are interleaved round-robin across each topic's feeds.
-func fetchArticles(topics []Topic) map[string][]*gofeed.Item {
-	articles := make(map[string][]*gofeed.Item)
+func fetchArticles(topics []Topic) map[string][]Article {
+	articles := make(map[string][]Article)
 	fp := gofeed.NewParser()
 
 	for _, topic := range topics {
-		var feedItems [][]*gofeed.Item
+		var feedItems [][]Article
 
 		for _, feed := range topic.Feeds {
 			parsedFeed, err := fp.ParseURL(feed.URL)
@@ -89,7 +104,7 @@ func fetchArticles(topics []Topic) map[string][]*gofeed.Item {
 				continue
 			}
 
-			feedItems = append(feedItems, filterRecentItems(parsedFeed.Items))
+			feedItems = append(feedItems, toArticles(filterRecentItems(parsedFeed.Items), feed.Name))
 		}
 
 		articles[topic.Name] = interleave(feedItems)
@@ -109,8 +124,19 @@ func filterRecentItems(items []*gofeed.Item) []*gofeed.Item {
 	return filtered
 }
 
-func interleave(feeds [][]*gofeed.Item) []*gofeed.Item {
-	var items []*gofeed.Item
+func toArticles(items []*gofeed.Item, feedName string) []Article {
+	articles := make([]Article, 0, len(items))
+	for _, item := range items {
+		article := Article{Title: item.Title, Link: item.Link, Source: feedName}
+		articles = append(articles, article)
+	}
+	return articles
+}
+
+// interleave merges feeds round-robin, taking one item from each feed in turn,
+// so earlier feeds come first when lengths are uneven.
+func interleave(feeds [][]Article) []Article {
+	var items []Article
 
 	longestLength := 0
 	for _, feed := range feeds {
@@ -129,15 +155,15 @@ func interleave(feeds [][]*gofeed.Item) []*gofeed.Item {
 }
 
 // buildDigest returns the digest text and the URLs it included.
-func buildDigest(articles map[string][]*gofeed.Item, recipient Recipient, maxItemsPerTopic int,
-	sent map[string]time.Time) (string, map[string]struct{}) {
+func buildDigest(articles map[string][]Article, recipient Recipient, maxItemsPerTopic int,
+	sent map[string]time.Time, labels map[string]string, now time.Time) (string, map[string]struct{}) {
 	var sb strings.Builder
 	included := make(map[string]struct{})
 
 	// Iterate the recipient's list, not the map, to keep their topic order
 	for _, topic := range recipient.Topics {
 		items := articles[topic]
-		var uniqueItems []*gofeed.Item
+		var uniqueItems []Article
 
 		for _, item := range items {
 			if len(uniqueItems) >= maxItemsPerTopic {
@@ -163,21 +189,30 @@ func buildDigest(articles map[string][]*gofeed.Item, recipient Recipient, maxIte
 			continue
 		}
 
-		fmt.Fprintln(&sb, formatItems(uniqueItems, topic))
+		fmt.Fprintln(&sb, formatItems(uniqueItems, labels[topic]))
 	}
 
-	return sb.String(), included
+	if sb.Len() == 0 {
+		return "", included
+	}
+
+	return formatHeader(now) + sb.String(), included
 }
 
-func formatItems(items []*gofeed.Item, topicName string) string {
+func formatItems(items []Article, topicLabel string) string {
 	var sb strings.Builder
 
-	fmt.Fprintf(&sb, "<b>%s</b>\n", html.EscapeString(topicName))
+	fmt.Fprintf(&sb, "<b>%s</b>\n", html.EscapeString(topicLabel))
 	for _, item := range items {
-		fmt.Fprintf(&sb, "<a href=\"%s\">%s</a>\n", html.EscapeString(item.Link), html.EscapeString(item.Title))
+		fmt.Fprintf(&sb, "• <a href=\"%s\">%s</a> <i>— %s</i>\n", html.EscapeString(item.Link),
+			html.EscapeString(item.Title), html.EscapeString(item.Source))
 	}
 
 	return sb.String()
+}
+
+func formatHeader(now time.Time) string {
+	return fmt.Sprintf("<b>☕️ Daily Kopi · %s</b>\n\n", now.Format("Mon 2 Jan"))
 }
 
 func sendMessage(botToken string, chatID string, text string) error {
