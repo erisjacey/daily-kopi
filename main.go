@@ -45,13 +45,14 @@ func main() {
 		log.Fatalf("loading state: %v", err)
 	}
 
+	now := time.Now()
 	for _, recipient := range config.Recipients {
 		sent := state[recipient.ChatID]
 		if sent == nil {
 			sent = make(map[string]time.Time)
 		}
 
-		digest, included := buildDigest(articles, recipient, config.MaxItemsPerTopic, sent, labels)
+		digest, included := buildDigest(articles, recipient, config.MaxItemsPerTopic, sent, labels, now)
 		if digest == "" {
 			slog.Info("empty message, skip send", "recipient", recipient.ChatID)
 			continue
@@ -65,7 +66,6 @@ func main() {
 		slog.Info("send digest succeeded", "recipient", recipient.ChatID)
 
 		// Only mark after successful send, so failed sends are retried next run
-		now := time.Now()
 		for link := range included {
 			sent[link] = now
 		}
@@ -133,6 +133,8 @@ func toArticles(items []*gofeed.Item, feedName string) []Article {
 	return articles
 }
 
+// interleave merges feeds round-robin, taking one item from each feed in turn,
+// so earlier feeds come first when lengths are uneven.
 func interleave(feeds [][]Article) []Article {
 	var items []Article
 
@@ -154,7 +156,7 @@ func interleave(feeds [][]Article) []Article {
 
 // buildDigest returns the digest text and the URLs it included.
 func buildDigest(articles map[string][]Article, recipient Recipient, maxItemsPerTopic int,
-	sent map[string]time.Time, labels map[string]string) (string, map[string]struct{}) {
+	sent map[string]time.Time, labels map[string]string, now time.Time) (string, map[string]struct{}) {
 	var sb strings.Builder
 	included := make(map[string]struct{})
 
@@ -190,7 +192,11 @@ func buildDigest(articles map[string][]Article, recipient Recipient, maxItemsPer
 		fmt.Fprintln(&sb, formatItems(uniqueItems, labels[topic]))
 	}
 
-	return sb.String(), included
+	if sb.Len() == 0 {
+		return "", included
+	}
+
+	return formatHeader(now) + sb.String(), included
 }
 
 func formatItems(items []Article, topicLabel string) string {
@@ -203,6 +209,10 @@ func formatItems(items []Article, topicLabel string) string {
 	}
 
 	return sb.String()
+}
+
+func formatHeader(now time.Time) string {
+	return fmt.Sprintf("<b>☕️ Daily Kopi · %s</b>\n\n", now.Format("Mon 2 Jan"))
 }
 
 func sendMessage(botToken string, chatID string, text string) error {

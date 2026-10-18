@@ -20,6 +20,7 @@ type Topic struct {
 	Feeds       []Feed `toml:"feeds"`
 }
 
+// Label returns DisplayName, or Name if it's unset.
 func (t Topic) Label() string {
 	if t.DisplayName == "" {
 		return t.Name
