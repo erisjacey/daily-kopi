@@ -19,6 +19,12 @@ import (
 	"github.com/mmcdole/gofeed"
 )
 
+type Article struct {
+	Title  string
+	Link   string
+	Source string
+}
+
 func main() {
 	godotenv.Load()
 	botToken := os.Getenv("TELEGRAM_BOT_TOKEN")
@@ -75,12 +81,12 @@ func main() {
 
 // fetchArticles returns recent items keyed by topic, skipping feeds that fail.
 // Items are interleaved round-robin across each topic's feeds.
-func fetchArticles(topics []Topic) map[string][]*gofeed.Item {
-	articles := make(map[string][]*gofeed.Item)
+func fetchArticles(topics []Topic) map[string][]Article {
+	articles := make(map[string][]Article)
 	fp := gofeed.NewParser()
 
 	for _, topic := range topics {
-		var feedItems [][]*gofeed.Item
+		var feedItems [][]Article
 
 		for _, feed := range topic.Feeds {
 			parsedFeed, err := fp.ParseURL(feed.URL)
@@ -89,7 +95,7 @@ func fetchArticles(topics []Topic) map[string][]*gofeed.Item {
 				continue
 			}
 
-			feedItems = append(feedItems, filterRecentItems(parsedFeed.Items))
+			feedItems = append(feedItems, toArticles(filterRecentItems(parsedFeed.Items), feed.Name))
 		}
 
 		articles[topic.Name] = interleave(feedItems)
@@ -109,8 +115,17 @@ func filterRecentItems(items []*gofeed.Item) []*gofeed.Item {
 	return filtered
 }
 
-func interleave(feeds [][]*gofeed.Item) []*gofeed.Item {
-	var items []*gofeed.Item
+func toArticles(items []*gofeed.Item, feedName string) []Article {
+	articles := make([]Article, 0, len(items))
+	for _, item := range items {
+		article := Article{Title: item.Title, Link: item.Link, Source: feedName}
+		articles = append(articles, article)
+	}
+	return articles
+}
+
+func interleave(feeds [][]Article) []Article {
+	var items []Article
 
 	longestLength := 0
 	for _, feed := range feeds {
@@ -129,7 +144,7 @@ func interleave(feeds [][]*gofeed.Item) []*gofeed.Item {
 }
 
 // buildDigest returns the digest text and the URLs it included.
-func buildDigest(articles map[string][]*gofeed.Item, recipient Recipient, maxItemsPerTopic int,
+func buildDigest(articles map[string][]Article, recipient Recipient, maxItemsPerTopic int,
 	sent map[string]time.Time) (string, map[string]struct{}) {
 	var sb strings.Builder
 	included := make(map[string]struct{})
@@ -137,7 +152,7 @@ func buildDigest(articles map[string][]*gofeed.Item, recipient Recipient, maxIte
 	// Iterate the recipient's list, not the map, to keep their topic order
 	for _, topic := range recipient.Topics {
 		items := articles[topic]
-		var uniqueItems []*gofeed.Item
+		var uniqueItems []Article
 
 		for _, item := range items {
 			if len(uniqueItems) >= maxItemsPerTopic {
@@ -169,12 +184,13 @@ func buildDigest(articles map[string][]*gofeed.Item, recipient Recipient, maxIte
 	return sb.String(), included
 }
 
-func formatItems(items []*gofeed.Item, topicName string) string {
+func formatItems(items []Article, topicName string) string {
 	var sb strings.Builder
 
 	fmt.Fprintf(&sb, "<b>%s</b>\n", html.EscapeString(topicName))
 	for _, item := range items {
-		fmt.Fprintf(&sb, "<a href=\"%s\">%s</a>\n", html.EscapeString(item.Link), html.EscapeString(item.Title))
+		fmt.Fprintf(&sb, "• <a href=\"%s\">%s</a> <i>— %s</i>\n", html.EscapeString(item.Link),
+			html.EscapeString(item.Title), html.EscapeString(item.Source))
 	}
 
 	return sb.String()
