@@ -1,8 +1,8 @@
 # ========================================================================
 # Global
 # ========================================================================
-state_file = "state.json"
-max_items_per_topic = 5
+state_file = "state.json" # Optional, defaults to "state.json"
+max_items_per_topic = 5 # Optional, defaults to 5
 
 # ========================================================================
 # Topics and Nested Feeds

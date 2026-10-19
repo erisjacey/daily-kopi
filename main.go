@@ -83,7 +83,7 @@ func main() {
 func topicLabels(topics []Topic) map[string]string {
 	labels := make(map[string]string)
 	for _, topic := range topics {
-		labels[topic.Name] = topic.Label()
+		labels[topic.Name] = topic.label()
 	}
 	return labels
 }
