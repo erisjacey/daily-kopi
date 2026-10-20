@@ -113,11 +113,13 @@ func fetchArticles(topics []Topic) map[string][]Article {
 	return articles
 }
 
+const recentWindow = 36 * time.Hour
+
 func filterRecentItems(items []*gofeed.Item) []*gofeed.Item {
 	var filtered []*gofeed.Item
 	for _, item := range items {
 		// nil PublishedParsed is considered "probably recent"
-		if item.PublishedParsed == nil || time.Since(*item.PublishedParsed).Abs() < 24*time.Hour {
+		if item.PublishedParsed == nil || time.Since(*item.PublishedParsed).Abs() < recentWindow {
 			filtered = append(filtered, item)
 		}
 	}
