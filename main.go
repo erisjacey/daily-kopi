@@ -38,7 +38,11 @@ func main() {
 	}
 
 	labels := topicLabels(config.Topics)
-	articles := fetchArticles(config.Topics)
+
+	articles, successCount := fetchArticles(config.Topics)
+	if successCount == 0 {
+		log.Fatal("all feeds failed")
+	}
 
 	state, err := loadState(config.StateFile)
 	if err != nil {
@@ -88,10 +92,13 @@ func topicLabels(topics []Topic) map[string]string {
 	return labels
 }
 
-// fetchArticles returns recent items keyed by topic, skipping feeds that fail.
+// fetchArticles returns recent items keyed by topic and
+// the number of successful feed fetches, skipping feeds that fail.
 // Items are interleaved round-robin across each topic's feeds.
-func fetchArticles(topics []Topic) map[string][]Article {
+func fetchArticles(topics []Topic) (map[string][]Article, int) {
 	articles := make(map[string][]Article)
+	successCount := 0
+
 	fp := gofeed.NewParser()
 
 	for _, topic := range topics {
@@ -105,12 +112,13 @@ func fetchArticles(topics []Topic) map[string][]Article {
 			}
 
 			feedItems = append(feedItems, toArticles(filterRecentItems(parsedFeed.Items), feed.Name))
+			successCount++
 		}
 
 		articles[topic.Name] = interleave(feedItems)
 	}
 
-	return articles
+	return articles, successCount
 }
 
 const recentWindow = 36 * time.Hour
