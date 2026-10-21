@@ -49,7 +49,9 @@ func main() {
 		log.Fatalf("loading state: %v", err)
 	}
 
+	var failedSends int
 	now := time.Now()
+
 	for _, recipient := range config.Recipients {
 		sent := state[recipient.ChatID]
 		if sent == nil {
@@ -64,6 +66,7 @@ func main() {
 
 		if err := sendMessage(botToken, strconv.Itoa(recipient.ChatID), digest); err != nil {
 			slog.Error("send digest failed", "recipient", recipient.ChatID, "err", err)
+			failedSends++
 			continue
 		}
 
@@ -81,6 +84,10 @@ func main() {
 	err = saveState(config.StateFile, state)
 	if err != nil {
 		log.Fatalf("saving state: %v", err)
+	}
+
+	if failedSends > 0 {
+		log.Fatalf("%d of %d recipients failed", failedSends, len(config.Recipients))
 	}
 }
 
