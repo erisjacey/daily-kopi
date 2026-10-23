@@ -38,14 +38,20 @@ func main() {
 	}
 
 	labels := topicLabels(config.Topics)
-	articles := fetchArticles(config.Topics)
+
+	articles, successCount := fetchArticles(config.Topics)
+	if successCount == 0 {
+		log.Fatal("all feeds failed")
+	}
 
 	state, err := loadState(config.StateFile)
 	if err != nil {
 		log.Fatalf("loading state: %v", err)
 	}
 
+	var failedSends int
 	now := time.Now()
+
 	for _, recipient := range config.Recipients {
 		sent := state[recipient.ChatID]
 		if sent == nil {
@@ -60,6 +66,7 @@ func main() {
 
 		if err := sendMessage(botToken, strconv.Itoa(recipient.ChatID), digest); err != nil {
 			slog.Error("send digest failed", "recipient", recipient.ChatID, "err", err)
+			failedSends++
 			continue
 		}
 
@@ -78,20 +85,27 @@ func main() {
 	if err != nil {
 		log.Fatalf("saving state: %v", err)
 	}
+
+	if failedSends > 0 {
+		log.Fatalf("%d of %d recipients failed", failedSends, len(config.Recipients))
+	}
 }
 
 func topicLabels(topics []Topic) map[string]string {
 	labels := make(map[string]string)
 	for _, topic := range topics {
-		labels[topic.Name] = topic.Label()
+		labels[topic.Name] = topic.label()
 	}
 	return labels
 }
 
-// fetchArticles returns recent items keyed by topic, skipping feeds that fail.
+// fetchArticles returns recent items keyed by topic and
+// the number of successful feed fetches, skipping feeds that fail.
 // Items are interleaved round-robin across each topic's feeds.
-func fetchArticles(topics []Topic) map[string][]Article {
+func fetchArticles(topics []Topic) (map[string][]Article, int) {
 	articles := make(map[string][]Article)
+	successCount := 0
+
 	fp := gofeed.NewParser()
 
 	for _, topic := range topics {
@@ -105,19 +119,22 @@ func fetchArticles(topics []Topic) map[string][]Article {
 			}
 
 			feedItems = append(feedItems, toArticles(filterRecentItems(parsedFeed.Items), feed.Name))
+			successCount++
 		}
 
 		articles[topic.Name] = interleave(feedItems)
 	}
 
-	return articles
+	return articles, successCount
 }
+
+const recentWindow = 36 * time.Hour
 
 func filterRecentItems(items []*gofeed.Item) []*gofeed.Item {
 	var filtered []*gofeed.Item
 	for _, item := range items {
 		// nil PublishedParsed is considered "probably recent"
-		if item.PublishedParsed == nil || time.Since(*item.PublishedParsed).Abs() < 24*time.Hour {
+		if item.PublishedParsed == nil || time.Since(*item.PublishedParsed).Abs() < recentWindow {
 			filtered = append(filtered, item)
 		}
 	}
