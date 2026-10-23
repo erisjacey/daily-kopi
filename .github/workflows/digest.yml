@@ -45,6 +45,7 @@ jobs:
         run: go run .
 
       - name: Save state for next run
+        if: ${{ !cancelled() }}
         uses: actions/cache/save@v6
         with:
           path: state.json
