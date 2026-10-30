@@ -32,7 +32,7 @@ A daily news digest: pulls curated RSS feeds per topic, skips links already seen
 
 ## Running on GitHub Actions
 
-This application primarily runs on daily scheduled cron jobs, triggered automatically through GitHub Actions. It is currently scheduled at 6:53 AM SGT daily, with the aim of sending the daily digests by 7 AM. GitHub often delays scheduled runs by an hour or two though.
+This application primarily runs on daily scheduled cron jobs, triggered automatically through [cron-job.org](https://cron-job.org/en/) calling `workflow_dispatch` at 07:00 SGT, using a fine-grained PAT scoped to this repo with **Actions: Read and write**.
 
 Sent links are tracked in `state.json` which is carried between runs by `actions/cache`. If the cache is lost, the only effect is some repeated links.
 
@@ -56,8 +56,6 @@ Whenever configurations need updating, update the `CONFIG_TOML` repository secre
 ```bash
 gh secret set CONFIG_TOML < path/to/config.toml
 ```
-
-Note: GitHub automatically disables schedule-triggered workflows in public repositories if there has been no repository activity for _60 consecutive days_.
 
 ## Roadmap
 

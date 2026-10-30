@@ -4,12 +4,10 @@ permissions:
   contents: read
 
 on:
-  schedule:
-    # Off the hour: GitHub delays scheduled runs at :00, aim for ~07:00 SGT
-    - cron: "53 6 * * *"
-      timezone: Asia/Singapore
-
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
 
 jobs:
   send-digest:
